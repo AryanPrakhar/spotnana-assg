@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -10,14 +10,85 @@ function App() {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [searched, setSearched] = useState(false)
+  const [airports, setAirports] = useState([])
+  const [originSuggestions, setOriginSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [showOriginDropdown, setShowOriginDropdown] = useState(false)
+  const [showDestinationDropdown, setShowDestinationDropdown] = useState(false)
+
+  useEffect(() => {
+    fetchAirports()
+  }, [])
+
+  const fetchAirports = async () => {
+    try {
+      const response = await fetch(`${API_URL}/airports`)
+      const data = await response.json()
+      setAirports(data)
+    } catch (err) {
+      console.error('Failed to fetch airports:', err)
+    }
+  }
+
+  const filterAirports = (searchText) => {
+    if (!searchText || searchText.length < 1) return []
+    const search = searchText.toLowerCase()
+    return airports
+      .filter(
+        (airport) =>
+          airport.code.toLowerCase().includes(search) ||
+          airport.city.toLowerCase().includes(search) ||
+          airport.name.toLowerCase().includes(search)
+      )
+      .slice(0, 8)
+  }
+
+  const handleOriginChange = (value) => {
+    setOrigin(value)
+    setOriginSuggestions(filterAirports(value))
+    setShowOriginDropdown(value.length > 0)
+  }
+
+  const handleDestinationChange = (value) => {
+    setDestination(value)
+    setDestinationSuggestions(filterAirports(value))
+    setShowDestinationDropdown(value.length > 0)
+  }
+
+  const selectOrigin = (airport) => {
+    setOrigin(airport.code)
+    setShowOriginDropdown(false)
+  }
+
+  const selectDestination = (airport) => {
+    setDestination(airport.code)
+    setShowDestinationDropdown(false)
+  }
 
   const handleSearch = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     setResults([])
-    setSearched(true)
+
+    // Validation
+    if (!origin || !destination) {
+      setError('Please enter both origin and destination airports')
+      setLoading(false)
+      return
+    }
+
+    if (origin.length !== 3 || destination.length !== 3) {
+      setError('Airport codes must be exactly 3 letters (e.g., JFK, LAX)')
+      setLoading(false)
+      return
+    }
+
+    if (origin.toUpperCase() === destination.toUpperCase()) {
+      setError('Origin and destination must be different')
+      setLoading(false)
+      return
+    }
 
     try {
       const response = await fetch(`${API_URL}/search`, {
@@ -39,6 +110,10 @@ function App() {
 
       const data = await response.json()
       setResults(data)
+      
+      if (data.length === 0) {
+        setError(`No flights found from ${origin.toUpperCase()} to ${destination.toUpperCase()} on ${date}. Try a different date or route.`)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -62,30 +137,62 @@ function App() {
       <main className="main">
         <form className="search-form" onSubmit={handleSearch}>
           <div className="form-row">
-            <div className="form-group">
+            <div className="form-group autocomplete-wrapper">
               <label htmlFor="origin">From</label>
               <input
                 id="origin"
                 type="text"
-                placeholder="JFK"
+                placeholder="JFK or New York"
                 value={origin}
-                onChange={(e) => setOrigin(e.target.value)}
+                onChange={(e) => handleOriginChange(e.target.value)}
+                onFocus={() => origin && setShowOriginDropdown(true)}
+                onBlur={() => setTimeout(() => setShowOriginDropdown(false), 200)}
                 required
                 maxLength={3}
               />
+              {showOriginDropdown && originSuggestions.length > 0 && (
+                <div className="autocomplete-dropdown">
+                  {originSuggestions.map((airport) => (
+                    <div
+                      key={airport.code}
+                      className="autocomplete-item"
+                      onClick={() => selectOrigin(airport)}
+                    >
+                      <strong>{airport.city} ({airport.code})</strong>
+                      <div className="airport-name">{airport.name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="form-group">
+            <div className="form-group autocomplete-wrapper">
               <label htmlFor="destination">To</label>
               <input
                 id="destination"
                 type="text"
-                placeholder="LAX"
+                placeholder="LAX or Los Angeles"
                 value={destination}
-                onChange={(e) => setDestination(e.target.value)}
+                onChange={(e) => handleDestinationChange(e.target.value)}
+                onFocus={() => destination && setShowDestinationDropdown(true)}
+                onBlur={() => setTimeout(() => setShowDestinationDropdown(false), 200)}
                 required
                 maxLength={3}
               />
+              {showDestinationDropdown && destinationSuggestions.length > 0 && (
+                <div className="autocomplete-dropdown">
+                  {destinationSuggestions.map((airport) => (
+                    <div
+                      key={airport.code}
+                      className="autocomplete-item"
+                      onClick={() => selectDestination(airport)}
+                    >
+                      <strong>{airport.city} ({airport.code})</strong>
+                      <div className="airport-name">{airport.name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="form-group">
@@ -107,15 +214,14 @@ function App() {
 
         {error && (
           <div className="error-message">
-            <strong>Error:</strong> {error}
+            {error}
           </div>
         )}
 
-        {loading && <div className="loading">Searching for flights...</div>}
-
-        {!loading && results.length === 0 && origin && destination && !error && searched && (
-          <div className="no-results">
-            No flights found for {origin} → {destination} on {date}
+        {loading && (
+          <div className="loading">
+            <div className="spinner"></div>
+            <p>Searching for the best flight connections...</p>
           </div>
         )}
 
