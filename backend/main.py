@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import List, Optional
 import os
 import networkx as nx
@@ -115,7 +115,7 @@ def calculate_duration(departure_time: str, departure_airport: str,
     return duration_minutes
 
 def is_valid_connection(flight1: Flight, flight2: Flight) -> bool:
-    """Validate connection using UTC times"""
+    """Validate connection using UTC times with domestic/international rules"""
     if flight1.destination != flight2.origin:
         return False
     
@@ -124,7 +124,24 @@ def is_valid_connection(flight1: Flight, flight2: Flight) -> bool:
     
     layover_minutes = int((dep2_utc - arr1_utc).total_seconds() / 60)
     
-    return 30 <= layover_minutes <= 360  # 30min to 6hrs layover
+    connection_airport = flight1.destination
+    if connection_airport not in airports:
+        return False
+        
+    origin1_country = airports[flight1.origin].country if flight1.origin in airports else None
+    origin2_country = airports[flight2.origin].country if flight2.origin in airports else None
+    dest1_country = airports[flight1.destination].country if flight1.destination in airports else None
+    dest2_country = airports[flight2.destination].country if flight2.destination in airports else None
+    
+    if not all([origin1_country, origin2_country, dest1_country, dest2_country]):
+        return False
+    
+    is_domestic = (origin1_country == dest1_country == origin2_country == dest2_country)
+    
+    min_layover = 45 if is_domestic else 90
+    max_layover = 360
+    
+    return min_layover <= layover_minutes <= max_layover
 
 def find_connection_paths(origin: str, destination: str, date: str, max_stops: int = 2) -> List[List[Flight]]:
     """Find flight paths with connections using networkx"""
@@ -281,7 +298,15 @@ async def get_airports():
 async def search_flights(request: SearchRequest) -> List[Itinerary]:
     """Search for flights"""
     
-    # Validate airports
+    request.origin = request.origin.upper().strip()
+    request.destination = request.destination.upper().strip()
+    
+    if len(request.origin) != 3 or not request.origin.isalpha():
+        raise HTTPException(status_code=400, detail="Origin must be a 3-letter IATA airport code")
+    
+    if len(request.destination) != 3 or not request.destination.isalpha():
+        raise HTTPException(status_code=400, detail="Destination must be a 3-letter IATA airport code")
+        
     if request.origin not in airports:
         raise HTTPException(status_code=400, detail=f"Invalid origin airport: {request.origin}")
     
@@ -291,9 +316,15 @@ async def search_flights(request: SearchRequest) -> List[Itinerary]:
     if request.origin == request.destination:
         raise HTTPException(status_code=400, detail="Origin and destination cannot be the same")
     
-    # Validate date format
     try:
-        datetime.fromisoformat(request.date)
+        search_date = datetime.fromisoformat(request.date)
+        today = date.today()
+        min_date = date(2024, 1, 1)
+        max_date = today + timedelta(days=365)
+        
+        if search_date.date() < min_date:
+            raise HTTPException(status_code=400, detail="Search date cannot be before 2024")
+            
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     
