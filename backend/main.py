@@ -247,9 +247,32 @@ def search_with_connections(origin: str, destination: str, date: str) -> List[It
         
         results.append(itinerary)
     
-    results.sort(key=lambda x: x.total_duration_minutes)
+    # Sort by composite score (stops + duration + price)
+    results.sort(key=calculate_itinerary_score)    
     
     return results
+
+def calculate_itinerary_score(itinerary: Itinerary) -> float:
+    """
+    Calculate composite score for sorting flights.
+    Lower score = better option
+    """
+    # Number of stops (0 for direct, 1 for 1-stop, etc.)
+    num_stops = len(itinerary.flights) - 1
+    
+    # Penalty for each stop: 120 minutes equivalent 
+    stops_penalty = num_stops * 120
+    
+    # Duration weight: normalize to minutes
+    duration_weight = itinerary.total_duration_minutes
+    
+    # Price weight: normalize price (e.g., $100 = 60 minutes equivalent)
+    price_weight = itinerary.total_price * 0.6
+    
+    # Composite score (weighted sum)
+    score = (stops_penalty * 0.25) + (duration_weight * 0.50) + (price_weight * 0.25)
+    
+    return score
 
 def search_direct_flights(origin: str, destination: str, date: str) -> List[Itinerary]:
     """Search for direct flights only"""
@@ -279,7 +302,8 @@ def search_direct_flights(origin: str, destination: str, date: str) -> List[Itin
         
         results.append(itinerary)
     
-    results.sort(key=lambda x: x.total_duration_minutes)
+    # Sort by composite score (stops + duration + price)
+    results.sort(key=calculate_itinerary_score)
     
     return results
 
