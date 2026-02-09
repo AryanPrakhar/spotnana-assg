@@ -9,6 +9,8 @@ services:
       - ./flights.json:/app/flights.json
     environment:
       - PYTHONPATH=/app
+    stdin_open: false
+    tty: false
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
