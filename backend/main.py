@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Optional
 import os
 import networkx as nx
+from zoneinfo import ZoneInfo
 
 app = FastAPI(title="SkyPath Flight Search API", version="1.0.0")
 
@@ -59,17 +60,13 @@ def load_flight_data():
     
     flights_file = "/app/flights.json"
     if not os.path.exists(flights_file):
-        flights_file = "../flights.json"  # For local development
+        flights_file = "../flights.json" 
     
     with open(flights_file, 'r') as f:
         data = json.load(f)
         
     airports = {airport['code']: Airport(**airport) for airport in data['airports']}
-    
-    # Load flights
     flights = [Flight(**flight) for flight in data['flights']]
-    
-    # Build flight graph for connection search
     build_flight_graph()
 
 def build_flight_graph():
@@ -91,24 +88,48 @@ def build_flight_graph():
             arrival_time=flight.arrivalTime
         )
 
-def calculate_duration(departure: str, arrival: str) -> int:
-    dept = datetime.fromisoformat(departure)
-    arr = datetime.fromisoformat(arrival)
-    return int((arr - dept).total_seconds() / 60)
+def to_utc_datetime(local_time_str: str, airport_code: str) -> datetime:
+    """Convert local airport time to UTC datetime"""
+    if airport_code not in airports:
+        raise ValueError(f"Unknown airport: {airport_code}")
+    
+    airport = airports[airport_code]
+    timezone = ZoneInfo(airport.timezone)
+    
+    local_dt = datetime.fromisoformat(local_time_str)
+    local_dt_with_tz = local_dt.replace(tzinfo=timezone)
+    
+    return local_dt_with_tz.astimezone(ZoneInfo('UTC'))
+
+def calculate_duration(departure_time: str, departure_airport: str, 
+                      arrival_time: str, arrival_airport: str) -> int:
+    """Calculate flight duration using UTC conversion"""
+    dept_utc = to_utc_datetime(departure_time, departure_airport)
+    arr_utc = to_utc_datetime(arrival_time, arrival_airport)
+    
+    duration_minutes = int((arr_utc - dept_utc).total_seconds() / 60)
+    
+    if duration_minutes < 0:
+        duration_minutes += 24 * 60
+    
+    return duration_minutes
 
 def is_valid_connection(flight1: Flight, flight2: Flight) -> bool:
-    arr1 = datetime.fromisoformat(flight1.arrivalTime)
-    dep2 = datetime.fromisoformat(flight2.departureTime)
+    """Validate connection using UTC times"""
+    if flight1.destination != flight2.origin:
+        return False
     
-    # check: arrival before departure with some buffer
-    layover_minutes = int((dep2 - arr1).total_seconds() / 60)
+    arr1_utc = to_utc_datetime(flight1.arrivalTime, flight1.destination)
+    dep2_utc = to_utc_datetime(flight2.departureTime, flight2.origin)
+    
+    layover_minutes = int((dep2_utc - arr1_utc).total_seconds() / 60)
+    
     return 30 <= layover_minutes <= 360  # 30min to 6hrs layover
 
 def find_connection_paths(origin: str, destination: str, date: str, max_stops: int = 2) -> List[List[Flight]]:
     """Find flight paths with connections using networkx"""
     valid_paths = []
     
-    # Find all simple paths up to max_stops + 1 length
     try:
         paths = list(nx.all_simple_paths(flight_graph, origin, destination, cutoff=max_stops + 1))
     except nx.NetworkXNoPath:
@@ -177,15 +198,18 @@ def search_with_connections(origin: str, destination: str, date: str) -> List[It
         
         segments = []
         for i, flight in enumerate(path_flights):
-            duration = calculate_duration(flight.departureTime, flight.arrivalTime)
+            duration = calculate_duration(
+                flight.departureTime, flight.origin,
+                flight.arrivalTime, flight.destination
+            )
             segments.append(FlightSegment(flight=flight, duration_minutes=duration))
             total_duration += duration
             
             if i < len(path_flights) - 1:
                 next_flight = path_flights[i + 1]
-                arr_time = datetime.fromisoformat(flight.arrivalTime)
-                dep_time = datetime.fromisoformat(next_flight.departureTime)
-                layover_min = int((dep_time - arr_time).total_seconds() / 60)
+                arr_utc = to_utc_datetime(flight.arrivalTime, flight.destination)
+                dep_utc = to_utc_datetime(next_flight.departureTime, next_flight.origin)
+                layover_min = int((dep_utc - arr_utc).total_seconds() / 60)
                 
                 layovers.append({
                     "airport": flight.destination,
@@ -218,7 +242,10 @@ def search_direct_flights(origin: str, destination: str, date: str) -> List[Itin
         if flight_date != date:
             continue
             
-        duration = calculate_duration(flight.departureTime, flight.arrivalTime)
+        duration = calculate_duration(
+            flight.departureTime, flight.origin,
+            flight.arrivalTime, flight.destination
+        )
         
         segment = FlightSegment(flight=flight, duration_minutes=duration)
         
