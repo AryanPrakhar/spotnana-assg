@@ -156,6 +156,8 @@ def find_connection_paths(origin: str, destination: str, date: str, max_stops: i
     for path in paths:
         if len(path) < 2:  # Skip direct 
             continue
+        if len(path) != len(set(path)):
+            continue
             
         # Get all possible flight combinations for this path
         path_flights = []
@@ -166,8 +168,10 @@ def find_connection_paths(origin: str, destination: str, date: str, max_stops: i
             
             for flight in flights:
                 if (flight.origin == origin_seg and 
-                    flight.destination == dest_seg and
-                    flight.departureTime.startswith(date)):
+                    flight.destination == dest_seg):
+                    # Only first flight must depart on requested date
+                    if i == 0 and not flight.departureTime.startswith(date):
+                        continue
                     segment_flights.append(flight)
             
             path_flights.append(segment_flights)
