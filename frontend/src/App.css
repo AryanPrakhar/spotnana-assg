@@ -287,8 +287,16 @@
 }
 
 .time {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--gray-600);
+  font-weight: 500;
+}
+
+.dateline-note {
+  font-size: 0.75rem;
+  color: #8b5cf6;
+  margin-top: 0.25rem;
+  font-weight: 500;
 }
 
 .flight-line {

@@ -127,6 +127,30 @@ function App() {
     return `${hours}h ${mins}m`
   }
 
+  const formatDateTime = (isoDateTime) => {
+    const date = new Date(isoDateTime)
+    const day = date.getDate()
+    const month = date.toLocaleDateString('en-US', { month: 'short' })
+    const time = date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    })
+    return `${day} ${month} · ${time}`
+  }
+
+  const getAirportCity = (code) => {
+    const airport = airports.find((a) => a.code.toUpperCase() === code.toUpperCase())
+    return airport ? airport.city : code
+  }
+
+  const isDateLineCrossing = (departureTime, arrivalTime) => {
+    const dep = new Date(departureTime)
+    const arr = new Date(arrivalTime)
+    // If arrival is more than 12 hours before departure, it's likely a date-line crossing
+    return arr.getTime() < dep.getTime()
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -258,12 +282,11 @@ function App() {
                         </div>
                         <div className="flight-route">
                           <div className="airport">
-                            <div className="airport-code">{segment.flight.origin}</div>
+                            <div className="airport-code">
+                              {getAirportCity(segment.flight.origin)} ({segment.flight.origin})
+                            </div>
                             <div className="time">
-                              {new Date(segment.flight.departureTime).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
+                              {formatDateTime(segment.flight.departureTime)}
                             </div>
                           </div>
                           <div className="flight-line">
@@ -272,13 +295,15 @@ function App() {
                             </div>
                           </div>
                           <div className="airport">
-                            <div className="airport-code">{segment.flight.destination}</div>
-                            <div className="time">
-                              {new Date(segment.flight.arrivalTime).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
+                            <div className="airport-code">
+                              {getAirportCity(segment.flight.destination)} ({segment.flight.destination})
                             </div>
+                            <div className="time">
+                              {formatDateTime(segment.flight.arrivalTime)}
+                            </div>
+                            {isDateLineCrossing(segment.flight.departureTime, segment.flight.arrivalTime) && (
+                              <div className="dateline-note">Arrives earlier (local time)</div>
+                            )}
                           </div>
                         </div>
                       </div>

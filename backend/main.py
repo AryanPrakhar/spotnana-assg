@@ -154,7 +154,7 @@ def find_connection_paths(origin: str, destination: str, date: str, max_stops: i
     
     # For each path, find valid flight combinations
     for path in paths:
-        if len(path) < 2:  # Skip direct 
+        if len(path) <= 2:  # Skip direct 
             continue
         if len(path) != len(set(path)):
             continue
